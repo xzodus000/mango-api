@@ -3,9 +3,7 @@ import os
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 from flask import Flask, render_template, request
 import logging
-# import tensorflow as tf
-# import tensorflow_hub as hub
-# import numpy as np
+
 from sklearn.ensemble import ExtraTreesClassifier
 
 from werkzeug.utils import secure_filename
