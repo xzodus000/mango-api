@@ -1,9 +1,12 @@
 from flask import Flask, request, jsonify
 import os
 import joblib
+from flask_cors import CORS, cross_origin
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 app = Flask(__name__)
+cors = CORS(app)
+app.config['CORS_HEADERS'] = 'Content-Type'
 import pandas as pd
 import cv2
 import numpy as np
@@ -13,6 +16,7 @@ from scipy.stats import skew,kurtosis
 import os
 import pickle
 from skimage.feature import graycomatrix, graycoprops
+from flask_cors import CORS
 # Set the upload folder and allowed extensions for images
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
@@ -22,9 +26,9 @@ model_file_path = os.path.join(os.getcwd(), 'RandomForestClassifiermodel.pkl')
 my_model = pickle.load(open(model_file_path,'rb'))
 
 mango_array_label = [
-    {"name": "MHN", "value": 0},
-    {"name": "NDM", "value": 1},
-    {"name": "R2E0", "value": 2}
+    {"name": "Mahachanok", "value": 0},
+    {"name": "Nam dok mai", "value": 1},
+    {"name": "R2E2", "value": 2}
 ]
 
 
@@ -246,12 +250,14 @@ def hello_world():
     return 'Hello, World!'
 
 @app.route('/upload', methods=['POST'])
+@cross_origin()
 def upload_file():
     # Check if the POST request has the file part
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'})
 
     file = request.files['file']
+    print(file)
     data = {'label': [''],}  # Replace with your own data
    
     file_data = file.read()
@@ -353,10 +359,10 @@ def upload_file():
     else:
         print("Array is not empty")
         filtered_array = list(filter(lambda x: x.get("value") == lableNumber, mango_array_label))
-        print(filtered_array)
+     
         lableNumber=filtered_array[0].get("name")
 
-    
+    print(lableNumber)
     # loaded_model = joblib.load('RandomForestClassifiermodel.joblib', mmap_mode=None)
     # pickled_model = pickle.load(open('RandomForestClassifiermodel.pkl', 'rb'))
     # pickled_model = pickle.load(open('RandomForestClassifiermodel.pkl', 'rb'))
@@ -367,21 +373,23 @@ def upload_file():
     # loaded_model.
 
     # If the user does not select a file, the browser submits an empty file without a filename
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'})
+    # if file.filename == '':
+    #     return jsonify({'error': 'No selected file'})
 
-    # Check if the file has an allowed extension
-    if file and allowed_file(file.filename):
-        # Save the uploaded file to the uploads folder
-        if not os.path.exists(app.config['UPLOAD_FOLDER']):
-            os.makedirs(app.config['UPLOAD_FOLDER'])
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], file.filename))
+    # # Check if the file has an allowed extension
+    # print(lableNumber)
+    # if file and allowed_file(file.filename):
+    #     # Save the uploaded file to the uploads folder
+    #     if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    #         os.makedirs(app.config['UPLOAD_FOLDER'])
+    #     file.save(os.path.join(app.config['UPLOAD_FOLDER'], file.filename))
 
-        # You can perform additional processing here, such as storing the file path in a database
+    #     # You can perform additional processing here, such as storing the file path in a database
 
-        return jsonify({'statusCode': 200, 'data' : str(lableNumber)})
+    #     return jsonify({'statusCode': 200, 'data' : str(lableNumber)})
 
-    return jsonify({'error': 'Invalid file extension'})
+    # return jsonify({'error': 'Invalid file extension'})
+    return jsonify({'statusCode': 200, 'data' : str(lableNumber)})
 
 if __name__ == '__main__':
     app.run(debug=True)
