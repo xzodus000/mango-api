@@ -392,4 +392,4 @@ def upload_file():
     return jsonify({'statusCode': 200, 'data' : str(lableNumber)})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000)
