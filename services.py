@@ -9,11 +9,12 @@ from scipy.stats import skew, kurtosis
 from skimage.feature import graycomatrix, graycoprops
 import pickle
 import logging
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 # Load the trained model
-model_file_path = os.path.join(os.getcwd(), 'RandomForestClassifiermodel.pkl')
+model_file_path = os.path.join(os.getcwd(), 'Random_Forest_best_variety.pkl')
 my_model = pickle.load(open(model_file_path, 'rb'))
 
 # Labels for mango varieties
@@ -167,11 +168,58 @@ def find_static_data_lab_and_rgb(img,hsv=False):
 
   return payload
 
+# def predict_mango(image_df):
+#     try:
+#         prediction = my_model.predict(image_df)
+#         label_number = prediction[0]
+        
+#         # Check if the model supports probability predictions
+#         if hasattr(my_model, "predict_proba"):
+#             probabilities = my_model.predict_proba(image_df)
+#             confidence = max(probabilities[0]) * 100  # Get highest probability
+#             print(f'Prediction: {label_number} with {confidence:.2f}% confidence')
+#         else:
+#             print(f'Prediction: {label_number}')
+
+#         return label_number  # You can also return confidence if needed
+#     except Exception as e:
+#         print("Error: Unable to make a prediction.")
+#         print("Details:", str(e))
+#         return None  # Return None if prediction fails
+
+
 def predict_mango(image_df):
-    prediction = my_model.predict(image_df)
-    label_number = prediction[0]
-    filtered_label = next((item["name"] for item in mango_array_label if item["value"] == label_number), "Unknown")
-    return filtered_label
+    try:
+        # Make a prediction
+        prediction = my_model.predict(image_df)
+        label_number = prediction[0]
+        
+        # Ensure the predicted label is in known classes
+        known_classes = my_model.classes_
+        if label_number not in known_classes:
+            print("Unknown Class Detected! Rejecting prediction.")
+            return "Unknown Class"
+        
+        # Check if the model supports probability predictions
+        if hasattr(my_model, "predict_proba"):
+            probabilities = my_model.predict_proba(image_df)
+            confidence = max(probabilities[0]) * 100  # Get highest probability
+            
+            # Apply confidence threshold (e.g., 50%)
+            if confidence < 49:
+                print(f"Low confidence ({confidence:.2f}%). Rejecting prediction.")
+                return "UNKNOWN_CLASS"
+            
+            print(f'Prediction: {label_number} with {confidence:.2f}% confidence')
+        else:
+            print(f'Prediction: {label_number}')
+
+        return label_number  
+    except Exception as e:
+        print("Error: Unable to make a prediction.")
+        print("Details:", str(e))
+        return None  # Return None if prediction fails
+
 
 def predict_by_variety(image_df, variety):
     models = {
@@ -197,3 +245,141 @@ def predict_by_variety(image_df, variety):
 
     filtered_label = next((item["name"] for item in mango_label if item["value"] == label_number), "Unknown")
     return filtered_label
+
+def extract_shape_features(image):
+    """
+    Extracts shape features from a given mango image for classification.
+
+    Parameters:
+        image_path (str): Path to the input image.
+
+    Returns:
+        dict: A dictionary containing the extracted shape features.
+    """
+    # Load the image
+    # Convert to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Apply thresholding
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    # Find contours
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return {"Error": "No contours found"}
+    
+    contour = max(contours, key=cv2.contourArea)  # Select the largest contour
+
+    # Calculate shape features
+    area = cv2.contourArea(contour)
+    perimeter = cv2.arcLength(contour, True)
+    x, y, w, h = cv2.boundingRect(contour)
+    aspect_ratio = w / h
+    compactness = area / (perimeter ** 2) if perimeter != 0 else 0
+    rect_area = w * h
+    extent = area / rect_area if rect_area != 0 else 0
+    hull = cv2.convexHull(contour)
+    hull_area = cv2.contourArea(hull)
+    solidity = area / hull_area if hull_area != 0 else 0
+
+    # Fit an ellipse (if possible) for eccentricity
+    if len(contour) >= 5:  # Minimum points required for ellipse fitting
+        ellipse = cv2.fitEllipse(contour)
+        (center, axes, orientation) = ellipse
+        major_axis = max(axes)
+        minor_axis = min(axes)
+        eccentricity = np.sqrt(1 - (minor_axis ** 2 / major_axis ** 2))
+    else:
+        eccentricity = None
+
+    # Calculate circularity
+    circularity = (4 * np.pi * area) / (perimeter ** 2) if perimeter != 0 else 0
+
+    # Compute Hu Moments
+    hu_moments = cv2.HuMoments(cv2.moments(contour)).flatten()
+
+    # Store features in a dictionary
+  
+    print(len(hu_moments.tolist()))
+
+    features = {
+        "Area": area,
+        "Perimeter": perimeter,
+        "Aspect_Ratio": aspect_ratio,
+        "Compactness": compactness,
+        "Extent": extent,
+        "Solidity": solidity,
+        "Eccentricity": eccentricity,
+        "Circularity": circularity,
+        **{f"Hu_Moment_{i+1}": moment for i, moment in enumerate(hu_moments)},
+    }
+
+    return features
+
+def mango_extract_object(image: np.ndarray) -> np.ndarray:
+    """
+    Extracts the largest contour (assumed to be the mango) from the input image,
+    then resizes it to fit within a 500x500 px canvas while preserving its aspect ratio.
+    
+    :param image: Input image as a NumPy array.
+    :return: Processed 500x500 image with the extracted mango centered.
+    """
+    if image is None:
+        raise ValueError("Error: Unable to read the image")
+    
+    # Convert to RGB and grayscale
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # Apply binary thresholding
+    _, threshold = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    
+    # Find contours
+    contours, _ = cv2.findContours(threshold, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        raise ValueError("Error: No contours found in the image")
+    
+    # Select the largest contour (assuming it's the mango)
+    largest_contour = max(contours, key=cv2.contourArea)
+    
+    # Create a mask
+    mask = np.zeros_like(gray)
+    cv2.drawContours(mask, [largest_contour], -1, color=255, thickness=cv2.FILLED)
+    
+    # Apply the mask to extract the mango object
+    mango_object = cv2.bitwise_and(image_rgb, image_rgb, mask=mask)
+    
+    # Get bounding box of the largest contour
+    x, y, w, h = cv2.boundingRect(largest_contour)
+    
+    # Crop the mango object
+    cropped_mango = mango_object[y:y+h, x:x+w]
+
+    # Determine the aspect ratio
+    aspect_ratio = w / h
+
+    # Resize while maintaining aspect ratio
+    if aspect_ratio > 1:
+        # Wider than tall → width should be 500px
+        new_w = 500
+        new_h = int(500 / aspect_ratio)
+    else:
+        # Taller than wide → height should be 500px
+        new_h = 500
+        new_w = int(500 * aspect_ratio)
+
+    resized_mango = cv2.resize(cropped_mango, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    # Create a black 500x500 canvas
+    final_image = np.zeros((500, 500, 3), dtype=np.uint8)
+
+    # Compute center position
+    x_offset = (500 - new_w) // 2
+    y_offset = (500 - new_h) // 2
+
+    # Place the resized mango at the center of the canvas
+    final_image[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized_mango
+
+    return final_image
+
+
